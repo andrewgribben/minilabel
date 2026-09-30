@@ -5,6 +5,5 @@ __pycache__/
 # Local render-and-verification outputs.
 work/test-two-paths-*/
 
-# Per-album files generated into the root output directory.
-output/*-position-[0-9][0-9].pdf
-output/*-position-[0-9][0-9]-cut.svg
+# Generated labels. The application and reusable assets live outside this folder.
+output/

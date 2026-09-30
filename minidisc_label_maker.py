@@ -49,7 +49,7 @@ USER_AGENT = os.environ.get(
     "MiniDiscLabelMaker/1.1 (personal macOS Shortcut)",
 )
 _last_musicbrainz_request = 0.0
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
 
 

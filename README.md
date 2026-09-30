@@ -12,9 +12,11 @@ The generator supports two workflows:
 Run the generator from the project root:
 
 ```sh
-/usr/bin/env python3 output/minidisc_label_maker.py
+/usr/bin/env python3 minidisc_label_maker.py
 ```
 
 Generated PDFs and matching cut SVGs are saved in the root [`output/`](output/)
-directory by default. Full macOS Shortcut and command-line instructions are in
-[`output/MINIDISC-LABEL-SHORTCUT.md`](output/MINIDISC-LABEL-SHORTCUT.md).
+directory by default. It contains generated labels only. Reusable A4 layout
+assets are kept in [`templates/`](templates/), and full macOS Shortcut and
+command-line instructions are in
+[`MINIDISC-LABEL-SHORTCUT.md`](MINIDISC-LABEL-SHORTCUT.md).

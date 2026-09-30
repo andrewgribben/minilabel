@@ -36,7 +36,7 @@ brew install librsvg
    - Add **Run Shell Script**, set **Pass Input** to **to stdin**, and use:
 
    ```sh
-   /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/output/minidisc_label_maker.py" --mode manual
+   /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/minidisc_label_maker.py" --mode manual
    ```
 
 4. Under **MusicBrainz artwork**:
@@ -45,7 +45,7 @@ brew install librsvg
    - Add **Run Shell Script**, set **Pass Input** to **to stdin**, and use:
 
    ```sh
-   /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/output/minidisc_label_maker.py" --mode musicbrainz
+   /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/minidisc_label_maker.py" --mode musicbrainz
    ```
 
 Each branch asks for the reusable-sheet grid position. The MusicBrainz branch
@@ -86,14 +86,14 @@ from the front cover. The MusicBrainz album title is printed over that strip.
 Manual mode:
 
 ```sh
-/usr/bin/env python3 output/minidisc_label_maker.py \
+/usr/bin/env python3 minidisc_label_maker.py \
   --mode manual --position 5 --input work/album.md
 ```
 
 MusicBrainz mode:
 
 ```sh
-/usr/bin/env python3 output/minidisc_label_maker.py \
+/usr/bin/env python3 minidisc_label_maker.py \
   --mode musicbrainz --position 5 --search "Radiohead - OK Computer"
 ```
 
