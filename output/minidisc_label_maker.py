@@ -48,6 +48,8 @@ USER_AGENT = os.environ.get(
     "MiniDiscLabelMaker/1.1 (personal macOS Shortcut)",
 )
 _last_musicbrainz_request = 0.0
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "output"
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,8 +75,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path.home() / "Desktop" / "MiniDisc Labels",
-        help="Output directory (default: ~/Desktop/MiniDisc Labels).",
+        default=DEFAULT_OUTPUT_DIR,
+        help="Output directory (default: the project's root output directory).",
     )
     parser.add_argument(
         "--search",
@@ -95,16 +97,6 @@ def parse_args() -> argparse.Namespace:
         help="Create the original text-only labels without querying MusicBrainz.",
     )
     return parser.parse_args()
-
-
-def read_markdown(input_path: Path | None) -> str:
-    if input_path:
-        return input_path.expanduser().read_text(encoding="utf-8")
-    if sys.stdin.isatty():
-        raise SystemExit(
-            "No Markdown received. Pipe Markdown into the script or use --input FILE."
-        )
-    return sys.stdin.read()
 
 
 def read_optional_input(input_path: Path | None) -> str:
@@ -307,6 +299,27 @@ def search_release_groups(album_title: str, artist: str | None) -> list[dict]:
             }
         )
     return [candidate for candidate in candidates if candidate["id"]]
+
+
+def lookup_release_group(release_group_mbid: str) -> dict:
+    url = (
+        f"{MUSICBRAINZ_API}/release-group/{release_group_mbid}?"
+        + urllib.parse.urlencode({"fmt": "json", "inc": "artists"})
+    )
+    result = request_json(url, musicbrainz=True)
+    credits = result.get("artist-credit", [])
+    credited_artist = "".join(
+        str(credit.get("name", "")) + str(credit.get("joinphrase", ""))
+        for credit in credits
+        if isinstance(credit, dict)
+    ).strip()
+    return {
+        "id": release_group_mbid,
+        "title": result.get("title", "MusicBrainz album"),
+        "artist": credited_artist or "Unknown artist",
+        "date": result.get("first-release-date", "")[:4],
+        "score": 100,
+    }
 
 
 def split_album_search(search_text: str, artist_override: str | None) -> tuple[str, str | None]:
@@ -709,40 +722,77 @@ def find_rsvg_convert() -> str:
 
 def main() -> None:
     args = parse_args()
-    markdown = read_markdown(args.input)
-    album_title, markdown_artist, tracks = parse_markdown(markdown)
-    artist = args.artist or markdown_artist
-    position = args.position or choose_position()
-    output_dir = args.output_dir.expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+    input_text = read_optional_input(args.input)
+    if args.mode:
+        mode = args.mode
+    elif args.release_group or args.search:
+        mode = "musicbrainz"
+    elif args.no_online_art:
+        mode = "manual"
+    else:
+        mode = choose_mode()
 
     front_image: str | None = None
     spine_image: str | None = None
     art_source: str | None = None
-    if not args.no_online_art:
+
+    if mode == "manual":
+        if not input_text:
+            raise SystemExit(
+                "Manual mode requires Markdown on standard input or via --input FILE."
+            )
+        album_title, _, tracks = parse_markdown(input_text)
+        print("Workflow: manual title and tracklist", file=sys.stderr)
+    else:
         try:
             if args.release_group:
-                release_group_mbid = args.release_group
-                selected_description = release_group_mbid
+                selected = lookup_release_group(args.release_group)
             else:
-                candidates = search_release_groups(album_title, artist)
+                search_text = args.search or input_text or prompt_search_text()
+                album_query, artist_query = split_album_search(search_text, args.artist)
+                candidates = search_release_groups(album_query, artist_query)
                 selected = choose_release_group(candidates)
-                release_group_mbid = selected["id"]
-                selected_description = f"{selected['title']} - {selected['artist']}"
-            front_image, spine_image, art_source, dedicated_spine = fetch_cover_art(
-                release_group_mbid
+
+            release_group_mbid = selected["id"]
+            album_title = selected["title"]
+            preferred_release_mbid: str | None = None
+
+            if not args.no_online_art:
+                try:
+                    (
+                        front_image,
+                        spine_image,
+                        art_source,
+                        dedicated_spine,
+                        preferred_release_mbid,
+                    ) = fetch_cover_art(release_group_mbid)
+                    spine_note = (
+                        "dedicated spine scan"
+                        if dedicated_spine
+                        else "front-cover strip"
+                    )
+                    print(f"Artwork: {spine_note}", file=sys.stderr)
+                except (ValueError, urllib.error.URLError, TimeoutError) as error:
+                    print(
+                        f"Warning: cover art could not be loaded ({error}). "
+                        "Continuing with a text-only label.",
+                        file=sys.stderr,
+                    )
+
+            tracks = fetch_release_tracks(
+                release_group_mbid,
+                preferred_release_mbid=preferred_release_mbid,
             )
-            spine_note = "dedicated spine scan" if dedicated_spine else "front-cover strip"
             print(
-                f"Artwork: {selected_description} ({spine_note})",
+                f"Workflow: MusicBrainz - {album_title} - {selected['artist']}",
                 file=sys.stderr,
             )
         except (ValueError, urllib.error.URLError, TimeoutError) as error:
-            print(
-                f"Warning: online artwork could not be loaded ({error}). "
-                "Creating text-only labels.",
-                file=sys.stderr,
-            )
+            raise SystemExit(f"MusicBrainz lookup failed: {error}") from error
+
+    position = args.position or choose_position()
+    output_dir = args.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     base_name = f"{slugify(album_title)}-position-{position:02d}"
     pdf_path = output_dir / f"{base_name}.pdf"
