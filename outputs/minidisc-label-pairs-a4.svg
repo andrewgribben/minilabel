@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+  width="210mm"
+  height="297mm"
+  viewBox="0 0 210 297"
+  version="1.1">
+  <title>A4 MiniDisc label pair cutting template</title>
+  <desc>Twelve repeated pairs, each containing one portrait 36 x 53 mm face label and one 59 x 4 mm edge label. Print or cut at 100 percent / actual size.</desc>
+
+  <!--
+    A4 page: 210 x 297 mm
+    12 label pairs in a 3 x 4 grid
+    Main MiniDisc labels: 36 x 53 mm (portrait)
+    Edge labels: 59 x 4 mm
+    Each pair occupies 59 x 59 mm.
+  -->
+  <g
+    inkscape:groupmode="layer"
+    inkscape:label="CUT PATHS - 100% SCALE"
+    id="cut-paths"
+    fill="none"
+    stroke="#ff0000"
+    stroke-width="0.1"
+    vector-effect="non-scaling-stroke">
+
+    <!-- Row 1 -->
+    <g id="label-pair-1" transform="translate(11.5 18.5)">
+      <rect id="face-label-1" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-1" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+    <g id="label-pair-2" transform="translate(75.5 18.5)">
+      <rect id="face-label-2" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-2" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+    <g id="label-pair-3" transform="translate(139.5 18.5)">
+      <rect id="face-label-3" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-3" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+
+    <!-- Row 2 -->
+    <g id="label-pair-4" transform="translate(11.5 85.5)">
+      <rect id="face-label-4" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-4" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+    <g id="label-pair-5" transform="translate(75.5 85.5)">
+      <rect id="face-label-5" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-5" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+    <g id="label-pair-6" transform="translate(139.5 85.5)">
+      <rect id="face-label-6" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-6" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+
+    <!-- Row 3 -->
+    <g id="label-pair-7" transform="translate(11.5 152.5)">
+      <rect id="face-label-7" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-7" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+    <g id="label-pair-8" transform="translate(75.5 152.5)">
+      <rect id="face-label-8" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-8" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+    <g id="label-pair-9" transform="translate(139.5 152.5)">
+      <rect id="face-label-9" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-9" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+
+    <!-- Row 4 -->
+    <g id="label-pair-10" transform="translate(11.5 219.5)">
+      <rect id="face-label-10" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-10" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+    <g id="label-pair-11" transform="translate(75.5 219.5)">
+      <rect id="face-label-11" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-11" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+    <g id="label-pair-12" transform="translate(139.5 219.5)">
+      <rect id="face-label-12" x="11.5" y="0" width="36" height="53" rx="1" ry="1" />
+      <rect id="edge-label-12" x="0" y="55" width="59" height="4" rx="0.75" ry="0.75" />
+    </g>
+  </g>
+</svg>
