@@ -4,8 +4,8 @@ The script has two workflows and creates one printable A4 PDF plus one matching
 A4 SVG cut file:
 
 1. **Manual** - provide a disc title and Markdown tracklist.
-2. **MusicBrainz** - search for an album, choose the match, and retrieve its
-   title and artwork automatically.
+2. **MusicBrainz** - search for an album, choose the album and release edition,
+   and retrieve its title, artwork, and disc count automatically.
 
 Both workflows use the same 12-position reusable-sheet grid. Positions run
 left-to-right and then top-to-bottom:
@@ -49,7 +49,9 @@ brew install librsvg
    ```
 
 Each branch asks for the reusable-sheet grid position. The MusicBrainz branch
-also displays a match chooser. Generated PDFs and cut SVGs are saved in
+also displays album and release-edition choosers. For multi-disc releases, pick
+the first unused position; the remaining labels use the following positions in
+left-to-right, top-to-bottom order. Generated PDFs and cut SVGs are saved in
 `/Volumes/External/Development/mdlabeller/output/`, and their full paths are
 returned to the Shortcut. There is no initial shared or empty input prompt.
 
@@ -74,12 +76,15 @@ MusicBrainz or download artwork.
 
 ## MusicBrainz workflow
 
-Enter either an album title or `Artist - Album title`, then select the correct
-result from the match chooser. The title comes from MusicBrainz. The front cover
-becomes the complete face label without a tracklist overlay.
+Enter either an album title or `Artist - Album title`, select the correct album,
+then select the relevant release edition and disc count. The title and media
+information come from MusicBrainz. The front cover becomes the complete face
+label without a tracklist overlay.
 A suitable wide image tagged as **Spine** is used for the edge background when
 available; otherwise the edge label uses a matching horizontal strip derived
-from the front cover. The MusicBrainz album title is printed over that strip.
+from the front cover. Multi-disc editions create one face and edge pair per
+medium. Each face receives a small disc badge, and each edge includes its medium
+title when MusicBrainz provides one, otherwise `Disc 1`, `Disc 2`, and so on.
 
 ## Command-line use
 
@@ -98,7 +103,8 @@ MusicBrainz mode:
 ```
 
 Use `--artist "Artist name"` with an album title to narrow the search, or
-`--release-group MBID` to use an exact MusicBrainz release group.
+`--release-group MBID` to use an exact MusicBrainz release group. Use
+`--release MBID` to select an exact release edition and skip both choosers.
 
 Print the PDF at **100% / Actual Size**. Import the matching SVG into the cutter
 without resizing and keep the A4 page origin unchanged.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create one printable MiniDisc label pair at a selected A4 grid position.
+"""Create printable MiniDisc label pairs at selected A4 grid positions.
 
 Input Markdown:
     # Album title
@@ -7,10 +7,10 @@ Input Markdown:
     2. Second track
 
 There are two workflows: manual Markdown title and tracklist input, or a
-MusicBrainz search that supplies the album title and cover art. The script
-writes an artwork PDF and a matching SVG cut file. If --position is not
-supplied, macOS displays a position chooser numbered left-to-right and then
-top-to-bottom.
+MusicBrainz search that supplies the album title, release media, and cover art.
+The script writes an artwork PDF and a matching SVG cut file. Multi-disc
+releases use consecutive positions. If --position is not supplied, macOS
+displays a position chooser numbered left-to-right and then top-to-bottom.
 """
 
 from __future__ import annotations
@@ -90,7 +90,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--release-group",
         metavar="MBID",
-        help="Use a specific MusicBrainz release-group MBID and skip the match chooser.",
+        help="Use a specific MusicBrainz release-group MBID and skip album matching.",
+    )
+    parser.add_argument(
+        "--release",
+        metavar="MBID",
+        help="Use an exact MusicBrainz release MBID and skip both match choosers.",
     )
     parser.add_argument(
         "--no-online-art",
@@ -176,6 +181,10 @@ def clean_inline_markdown(value: str) -> str:
     return html.unescape(value).strip()
 
 
+def normalise_label_text(value: str) -> str:
+    return value.translate(str.maketrans({"–": "-", "—": "-", "‑": "-", "•": "-"}))
+
+
 def parse_markdown(markdown: str) -> tuple[str, str | None, list[tuple[str, str]]]:
     title = ""
     artist: str | None = None
@@ -218,9 +227,10 @@ def parse_markdown(markdown: str) -> tuple[str, str | None, list[tuple[str, str]
     return title, artist, tracks
 
 
-def choose_position() -> int:
+def choose_position(label_count: int = 1) -> int:
+    maximum_start = 13 - label_count
     choices = []
-    for position in range(1, 13):
+    for position in range(1, maximum_start + 1):
         row = (position - 1) // 3 + 1
         column = (position - 1) % 3 + 1
         choices.append(f'"{position} - row {row}, column {column}"')
@@ -229,7 +239,7 @@ def choose_position() -> int:
         apple_script = (
             f"set choices to {{{', '.join(choices)}}}\n"
             'set picked to choose from list choices with prompt '
-            '"Choose the unused A4 label position (left-to-right, top-to-bottom):" '
+            f'"Choose the first of {label_count} consecutive A4 label position(s):" '
             'default items {"1 - row 1, column 1"}\n'
             "if picked is false then error number -128\n"
             "return item 1 of picked"
@@ -245,11 +255,11 @@ def choose_position() -> int:
         return int(result.stdout.strip().split()[0])
 
     with open("/dev/tty", "r+", encoding="utf-8") as terminal:
-        terminal.write("Choose grid position 1-12: ")
+        terminal.write(f"Choose first grid position 1-{maximum_start}: ")
         terminal.flush()
         value = terminal.readline().strip()
-    if not value.isdigit() or not 1 <= int(value) <= 12:
-        raise SystemExit("Grid position must be a number from 1 to 12.")
+    if not value.isdigit() or not 1 <= int(value) <= maximum_start:
+        raise SystemExit(f"Grid position must be a number from 1 to {maximum_start}.")
     return int(value)
 
 
@@ -323,6 +333,57 @@ def lookup_release_group(release_group_mbid: str) -> dict:
     }
 
 
+def release_summary(result: dict) -> dict:
+    media = sorted(result.get("media", []), key=lambda item: item.get("position", 0))
+    credits = result.get("artist-credit", [])
+    artist = "".join(
+        str(credit.get("name", "")) + str(credit.get("joinphrase", ""))
+        for credit in credits
+        if isinstance(credit, dict)
+    ).strip()
+    return {
+        "id": result.get("id", ""),
+        "release_group_id": result.get("release-group", {}).get("id", ""),
+        "title": result.get("title", "MusicBrainz album"),
+        "artist": artist or "Unknown artist",
+        "date": result.get("date", "")[:10],
+        "country": result.get("country", ""),
+        "status": result.get("status", ""),
+        "disambiguation": result.get("disambiguation", ""),
+        "media": media or [{"position": 1, "title": "", "format": ""}],
+    }
+
+
+def browse_releases(release_group_mbid: str) -> list[dict]:
+    url = f"{MUSICBRAINZ_API}/release?" + urllib.parse.urlencode(
+        {
+            "release-group": release_group_mbid,
+            "inc": "media+artist-credits",
+            "fmt": "json",
+            "limit": 100,
+        }
+    )
+    data = request_json(url, musicbrainz=True)
+    releases = [release_summary(result) for result in data.get("releases", [])]
+    releases = [release for release in releases if release["id"]]
+    releases.sort(
+        key=lambda release: (
+            -len(release["media"]),
+            release["status"] != "Official",
+            release["date"] or "9999",
+            release["country"],
+        )
+    )
+    return releases[:25]
+
+
+def lookup_release(release_mbid: str) -> dict:
+    url = f"{MUSICBRAINZ_API}/release/{release_mbid}?" + urllib.parse.urlencode(
+        {"fmt": "json", "inc": "media+release-groups+artist-credits"}
+    )
+    return release_summary(request_json(url, musicbrainz=True))
+
+
 def split_album_search(search_text: str, artist_override: str | None) -> tuple[str, str | None]:
     search_text = search_text.strip()
     if artist_override:
@@ -378,6 +439,57 @@ def choose_release_group(candidates: list[dict]) -> dict:
         value = terminal.readline().strip()
     if not value.isdigit() or not 1 <= int(value) <= len(candidates):
         raise SystemExit("Invalid MusicBrainz release selection.")
+    return candidates[int(value) - 1]
+
+
+def choose_release(candidates: list[dict]) -> dict:
+    if not candidates:
+        raise ValueError("MusicBrainz returned no releases for that album.")
+    if len(candidates) == 1:
+        return candidates[0]
+
+    labels = []
+    for index, candidate in enumerate(candidates, start=1):
+        formats = sorted(
+            {medium.get("format", "") for medium in candidate["media"] if medium.get("format")}
+        )
+        medium_text = f"{len(candidate['media'])} disc" + (
+            "s" if len(candidate["media"]) != 1 else ""
+        )
+        details = [medium_text, "/".join(formats), candidate["country"], candidate["date"]]
+        if candidate["disambiguation"]:
+            details.append(candidate["disambiguation"])
+        labels.append(f"{index}. {candidate['title']} - " + " | ".join(filter(None, details)))
+
+    if sys.platform == "darwin" and shutil.which("osascript"):
+        escaped = [
+            '"' + label.replace("\\", "\\\\").replace('"', '\\"') + '"'
+            for label in labels
+        ]
+        apple_script = (
+            f"set choices to {{{', '.join(escaped)}}}\n"
+            'set picked to choose from list choices with prompt '
+            '"Choose the release edition and disc count:" '
+            f"default items {{{escaped[0]}}}\n"
+            "if picked is false then error number -128\n"
+            "return item 1 of picked"
+        )
+        result = subprocess.run(
+            ["osascript", "-e", apple_script],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise SystemExit("No MusicBrainz release edition selected.")
+        return candidates[labels.index(result.stdout.strip())]
+
+    with open("/dev/tty", "r+", encoding="utf-8") as terminal:
+        terminal.write("\n".join(labels) + "\nChoose release edition: ")
+        terminal.flush()
+        value = terminal.readline().strip()
+    if not value.isdigit() or not 1 <= int(value) <= len(candidates):
+        raise SystemExit("Invalid MusicBrainz release edition selection.")
     return candidates[int(value) - 1]
 
 
@@ -441,10 +553,24 @@ def download_image_data_uri(url: str) -> tuple[str, tuple[int, int] | None]:
 
 
 def fetch_cover_art(
+    release_mbid: str,
     release_group_mbid: str,
 ) -> tuple[str, str, str | None, bool]:
-    metadata_url = f"{COVER_ART_API}/release-group/{release_group_mbid}"
-    data = request_json(metadata_url)
+    data = None
+    for entity, mbid in (("release", release_mbid), ("release-group", release_group_mbid)):
+        if not mbid:
+            continue
+        try:
+            candidate = request_json(f"{COVER_ART_API}/{entity}/{mbid}")
+        except urllib.error.HTTPError as error:
+            if error.code == 404:
+                continue
+            raise
+        if any(image.get("front") for image in candidate.get("images", [])):
+            data = candidate
+            break
+    if data is None:
+        raise ValueError("The selected MusicBrainz release has no front cover image.")
     images = [image for image in data.get("images", []) if image.get("approved", True)]
     front = next(
         (image for image in images if image.get("front")),
@@ -566,98 +692,118 @@ def create_print_svg(
     front_image: str | None = None,
     spine_image: str | None = None,
     art_source: str | None = None,
+    disc_labels: list[str] | None = None,
 ) -> str:
-    group_x, group_y = cell_origin(position)
-    face_x = group_x + 11.5
-    face_y = group_y
-    edge_x = group_x
-    edge_y = group_y + 55
-    track_elements = []
-    if tracks:
-        font_mm, line_height, lines = layout_tracklist(tracks)
-        text_height = len(lines) * line_height
-        first_baseline = face_y + (FACE_HEIGHT_MM - text_height) / 2 + font_mm
-        text_colour = "#ffffff" if front_image else "#111111"
-        for index, line in enumerate(lines):
-            y = first_baseline + index * line_height
-            track_elements.append(
-                f'    <text x="{face_x + 2:.2f}" y="{y:.2f}" '
-                f'font-family="Helvetica, Arial, sans-serif" font-size="{font_mm:.2f}" '
-                f'fill="{text_colour}" xml:space="preserve">{html.escape(line)}</text>'
-            )
-
-    title_font_mm = 2.2
-    title_width = approximate_em_width(album_title) * title_font_mm
-    length_attribute = ""
-    if title_width > EDGE_WIDTH_MM - 4:
-        length_attribute = f' textLength="{EDGE_WIDTH_MM - 4}" lengthAdjust="spacingAndGlyphs"'
-
-    face_background = []
-    if front_image:
-        face_background.append(
-            f'    <image x="{face_x}" y="{face_y}" width="36" height="53" preserveAspectRatio="xMidYMid slice" href="{front_image}" />'
-        )
-        if tracks:
-            face_background.append(
-                f'    <rect x="{face_x}" y="{face_y}" width="36" height="53" fill="#000000" fill-opacity="0.64" />'
-            )
-
-    edge_background = []
-    if spine_image:
-        edge_background.extend(
+    labels = disc_labels or [""]
+    positions = list(range(position, position + len(labels)))
+    source_note = f" Cover art source: {art_source}." if art_source else ""
+    parts = [
+        svg_header(
+            f"{album_title} - printable MiniDisc labels",
+            f"Artwork at A4 grid positions {positions}.{source_note}",
+        ),
+        '  <rect x="0" y="0" width="210" height="297" fill="#ffffff" />',
+        "  <defs>",
+    ]
+    for index, grid_position in enumerate(positions, start=1):
+        group_x, group_y = cell_origin(grid_position)
+        face_x = group_x + 11.5
+        edge_y = group_y + 55
+        parts.extend(
             [
-                f'    <image x="{edge_x}" y="{edge_y}" width="59" height="4" preserveAspectRatio="xMidYMid slice" href="{spine_image}" />',
-                f'    <rect x="{edge_x}" y="{edge_y}" width="59" height="4" fill="#000000" fill-opacity="0.48" />',
+                f'    <clipPath id="face-clip-{index}"><rect x="{face_x}" y="{group_y}" width="36" height="53" rx="1" ry="1" /></clipPath>',
+                f'    <clipPath id="edge-clip-{index}"><rect x="{group_x}" y="{edge_y}" width="59" height="4" rx="0.75" ry="0.75" /></clipPath>',
             ]
         )
-    title_colour = "#ffffff" if spine_image else "#111111"
-    source_note = f" Cover art source: {art_source}." if art_source else ""
+    parts.append("  </defs>")
 
-    return "\n".join(
-        [
-            svg_header(
-                f"{album_title} - printable MiniDisc labels",
-                f"Artwork at A4 grid position {position}.{source_note}",
-            ),
-            '  <rect x="0" y="0" width="210" height="297" fill="#ffffff" />',
-            "  <defs>",
-            f'    <clipPath id="face-clip"><rect x="{face_x}" y="{face_y}" width="36" height="53" rx="1" ry="1" /></clipPath>',
-            f'    <clipPath id="edge-clip"><rect x="{edge_x}" y="{edge_y}" width="59" height="4" rx="0.75" ry="0.75" /></clipPath>',
-            "  </defs>",
-            f'  <g id="face-artwork" clip-path="url(#face-clip)">',
-            *face_background,
-            *track_elements,
-            "  </g>",
-            f'  <g id="edge-artwork" clip-path="url(#edge-clip)">',
-            *edge_background,
+    for index, (grid_position, disc_label) in enumerate(zip(positions, labels), start=1):
+        group_x, group_y = cell_origin(grid_position)
+        face_x = group_x + 11.5
+        face_y = group_y
+        edge_x = group_x
+        edge_y = group_y + 55
+        edge_title = f"{album_title} - {disc_label}" if disc_label else album_title
+
+        parts.append(f'  <g id="face-artwork-{index}" clip-path="url(#face-clip-{index})">')
+        if front_image:
+            parts.append(
+                f'    <image x="{face_x}" y="{face_y}" width="36" height="53" preserveAspectRatio="xMidYMid slice" href="{front_image}" />'
+            )
+            if tracks:
+                parts.append(
+                    f'    <rect x="{face_x}" y="{face_y}" width="36" height="53" fill="#000000" fill-opacity="0.64" />'
+                )
+        if tracks:
+            font_mm, line_height, lines = layout_tracklist(tracks)
+            text_height = len(lines) * line_height
+            first_baseline = face_y + (FACE_HEIGHT_MM - text_height) / 2 + font_mm
+            text_colour = "#ffffff" if front_image else "#111111"
+            for line_index, line in enumerate(lines):
+                y = first_baseline + line_index * line_height
+                parts.append(
+                    f'    <text x="{face_x + 2:.2f}" y="{y:.2f}" '
+                    f'font-family="Helvetica, Arial, sans-serif" font-size="{font_mm:.2f}" '
+                    f'fill="{text_colour}" xml:space="preserve">{html.escape(line)}</text>'
+                )
+        if len(labels) > 1:
+            badge_text = disc_label.upper()
+            badge_length = ""
+            if approximate_em_width(badge_text) * 2 > 12:
+                badge_length = ' textLength="12" lengthAdjust="spacingAndGlyphs"'
+            parts.extend(
+                [
+                    f'    <rect x="{face_x + 20}" y="{face_y + 46}" width="14" height="5" rx="1" fill="#000000" fill-opacity="0.72" />',
+                    f'    <text x="{face_x + 27}" y="{face_y + 49.35}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-size="2" font-weight="700" fill="#ffffff"{badge_length}>{html.escape(badge_text)}</text>',
+                ]
+            )
+        parts.append("  </g>")
+
+        parts.append(f'  <g id="edge-artwork-{index}" clip-path="url(#edge-clip-{index})">')
+        if spine_image:
+            parts.extend(
+                [
+                    f'    <image x="{edge_x}" y="{edge_y}" width="59" height="4" preserveAspectRatio="xMidYMid slice" href="{spine_image}" />',
+                    f'    <rect x="{edge_x}" y="{edge_y}" width="59" height="4" fill="#000000" fill-opacity="0.48" />',
+                ]
+            )
+        title_font_mm = 2.2
+        length_attribute = ""
+        if approximate_em_width(edge_title) * title_font_mm > EDGE_WIDTH_MM - 4:
+            length_attribute = f' textLength="{EDGE_WIDTH_MM - 4}" lengthAdjust="spacingAndGlyphs"'
+        title_colour = "#ffffff" if spine_image else "#111111"
+        parts.append(
             f'    <text x="{edge_x + EDGE_WIDTH_MM / 2:.2f}" y="{edge_y + 2.72:.2f}" text-anchor="middle" '
             f'font-family="Helvetica, Arial, sans-serif" font-size="{title_font_mm:.2f}" font-weight="600" '
-            f'fill="{title_colour}"{length_attribute}>{html.escape(album_title)}</text>',
-            "  </g>",
-            "</svg>",
-        ]
-    )
+            f'fill="{title_colour}"{length_attribute}>{html.escape(edge_title)}</text>'
+        )
+        parts.append("  </g>")
+
+    parts.append("</svg>")
+    return "\n".join(parts)
 
 
-def create_cut_svg(album_title: str, position: int) -> str:
-    group_x, group_y = cell_origin(position)
-    face_x = group_x + 11.5
-    face_y = group_y
-    edge_x = group_x
-    edge_y = group_y + 55
-    return "\n".join(
-        [
-            svg_header(
-                f"{album_title} - MiniDisc cut paths",
-                f"Cut paths at A4 grid position {position}. Use at 100 percent scale.",
-            ),
-            '  <g id="cut-paths" fill="none" stroke="#ff0000" stroke-width="0.1" vector-effect="non-scaling-stroke">',
-            f'    <rect id="face-label" x="{face_x}" y="{face_y}" width="36" height="53" rx="1" ry="1" />',
-            f'    <rect id="edge-label" x="{edge_x}" y="{edge_y}" width="59" height="4" rx="0.75" ry="0.75" />',
-            "  </g>",
-            "</svg>",
-        ]
-    )
+def create_cut_svg(album_title: str, position: int, label_count: int = 1) -> str:
+    positions = list(range(position, position + label_count))
+    parts = [
+        svg_header(
+            f"{album_title} - MiniDisc cut paths",
+            f"Cut paths at A4 grid positions {positions}. Use at 100 percent scale.",
+        ),
+        '  <g id="cut-paths" fill="none" stroke="#ff0000" stroke-width="0.1" vector-effect="non-scaling-stroke">',
+    ]
+    for index, grid_position in enumerate(positions, start=1):
+        group_x, group_y = cell_origin(grid_position)
+        face_x = group_x + 11.5
+        edge_y = group_y + 55
+        parts.extend(
+            [
+                f'    <rect id="face-label-{index}" x="{face_x}" y="{group_y}" width="36" height="53" rx="1" ry="1" />',
+                f'    <rect id="edge-label-{index}" x="{group_x}" y="{edge_y}" width="59" height="4" rx="0.75" ry="0.75" />',
+            ]
+        )
+    parts.extend(["  </g>", "</svg>"])
+    return "\n".join(parts)
 
 
 def find_rsvg_convert() -> str:
@@ -680,7 +826,7 @@ def main() -> None:
     input_text = read_optional_input(args.input)
     if args.mode:
         mode = args.mode
-    elif args.release_group or args.search:
+    elif args.release or args.release_group or args.search:
         mode = "musicbrainz"
     elif args.no_online_art:
         mode = "manual"
@@ -690,6 +836,7 @@ def main() -> None:
     front_image: str | None = None
     spine_image: str | None = None
     art_source: str | None = None
+    disc_labels = [""]
 
     if mode == "manual":
         if not input_text:
@@ -697,19 +844,36 @@ def main() -> None:
                 "Manual mode requires Markdown on standard input or via --input FILE."
             )
         album_title, _, tracks = parse_markdown(input_text)
+        album_title = normalise_label_text(album_title)
         print("Workflow: manual title and tracklist", file=sys.stderr)
     else:
         try:
-            if args.release_group:
-                selected = lookup_release_group(args.release_group)
+            selected_group = None
+            if args.release:
+                selected_release = lookup_release(args.release)
             else:
-                search_text = args.search or input_text or prompt_search_text()
-                album_query, artist_query = split_album_search(search_text, args.artist)
-                candidates = search_release_groups(album_query, artist_query)
-                selected = choose_release_group(candidates)
+                if args.release_group:
+                    selected_group = lookup_release_group(args.release_group)
+                else:
+                    search_text = args.search or input_text or prompt_search_text()
+                    album_query, artist_query = split_album_search(search_text, args.artist)
+                    candidates = search_release_groups(album_query, artist_query)
+                    selected_group = choose_release_group(candidates)
+                releases = browse_releases(selected_group["id"])
+                selected_release = choose_release(releases)
 
-            release_group_mbid = selected["id"]
-            album_title = selected["title"]
+            release_group_mbid = (
+                selected_release["release_group_id"]
+                or (selected_group["id"] if selected_group else "")
+            )
+            album_title = normalise_label_text(selected_release["title"])
+            media = selected_release["media"]
+            if len(media) > 1:
+                disc_labels = [
+                    normalise_label_text(str(medium.get("title", "")).strip())
+                    or f"Disc {index}"
+                    for index, medium in enumerate(media, start=1)
+                ]
             if args.no_online_art:
                 raise ValueError("MusicBrainz mode requires online cover artwork.")
             (
@@ -717,27 +881,49 @@ def main() -> None:
                 spine_image,
                 art_source,
                 dedicated_spine,
-            ) = fetch_cover_art(release_group_mbid)
+            ) = fetch_cover_art(selected_release["id"], release_group_mbid)
             spine_note = (
                 "dedicated spine scan" if dedicated_spine else "front-cover strip"
             )
             print(f"Artwork: {spine_note}", file=sys.stderr)
             tracks = []
+            artist = (
+                selected_group["artist"] if selected_group else selected_release["artist"]
+            )
             print(
-                f"Workflow: MusicBrainz artwork - {album_title} - {selected['artist']}",
+                f"Workflow: MusicBrainz artwork - {album_title} - {artist} "
+                f"({len(media)} disc{'s' if len(media) != 1 else ''})",
                 file=sys.stderr,
             )
         except (ValueError, urllib.error.URLError, TimeoutError) as error:
             raise SystemExit(f"MusicBrainz lookup failed: {error}") from error
 
-    position = args.position or choose_position()
+    label_count = len(disc_labels)
+    if label_count > 12:
+        raise SystemExit(
+            f"This release has {label_count} discs, but the A4 layout has only 12 positions."
+        )
+    position = args.position or choose_position(label_count)
+    if position + label_count - 1 > 12:
+        raise SystemExit(
+            f"A {label_count}-disc release cannot start at position {position}. "
+            f"Choose position {13 - label_count} or earlier."
+        )
     output_dir = args.output_dir.expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    base_name = f"{slugify(album_title)}-position-{position:02d}"
+    last_position = position + label_count - 1
+    position_text = (
+        f"position-{position:02d}"
+        if label_count == 1
+        else f"positions-{position:02d}-{last_position:02d}"
+    )
+    base_name = f"{slugify(album_title)}-{position_text}"
     pdf_path = output_dir / f"{base_name}.pdf"
     cut_path = output_dir / f"{base_name}-cut.svg"
-    cut_path.write_text(create_cut_svg(album_title, position), encoding="utf-8")
+    cut_path.write_text(
+        create_cut_svg(album_title, position, label_count), encoding="utf-8"
+    )
 
     with tempfile.TemporaryDirectory(prefix="minidisc-label-") as temporary_dir:
         artwork_svg = Path(temporary_dir) / "artwork.svg"
@@ -749,6 +935,7 @@ def main() -> None:
                 front_image=front_image,
                 spine_image=spine_image,
                 art_source=art_source,
+                disc_labels=disc_labels,
             ),
             encoding="utf-8",
         )

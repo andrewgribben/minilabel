@@ -6,8 +6,9 @@ position on the reusable 12-position A4 layout.
 The generator supports two workflows:
 
 - **Manual:** provide a Markdown H1 disc title and ordered or unordered tracklist.
-- **MusicBrainz:** search for an album and use its Cover Art Archive image as
-  the complete face label, with the album title on the edge label.
+- **MusicBrainz:** search for an album and release edition, then use its Cover
+  Art Archive image as the face label. Multi-disc editions automatically fill
+  consecutive positions with numbered face and edge labels.
 
 Run the generator from the project root:
 
