@@ -6,10 +6,11 @@ Input Markdown:
     1. First track
     2. Second track
 
-There are two workflows: manual Markdown input, or a MusicBrainz search that
-supplies the title, tracklist and cover art. The script writes an artwork PDF
-and a matching SVG cut file. If --position is not supplied, macOS displays a
-position chooser numbered left-to-right and then top-to-bottom.
+There are two workflows: manual Markdown title and tracklist input, or a
+MusicBrainz search that supplies the album title and cover art. The script
+writes an artwork PDF and a matching SVG cut file. If --position is not
+supplied, macOS displays a position chooser numbered left-to-right and then
+top-to-bottom.
 """
 
 from __future__ import annotations
@@ -94,7 +95,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--no-online-art",
         action="store_true",
-        help="Create the original text-only labels without querying MusicBrainz.",
+        help="Legacy shortcut for manual mode when --mode is omitted.",
     )
     return parser.parse_args()
 
@@ -380,51 +381,6 @@ def choose_release_group(candidates: list[dict]) -> dict:
     return candidates[int(value) - 1]
 
 
-def tracks_from_release(release: dict) -> list[tuple[str, str]]:
-    titles: list[str] = []
-    for medium in release.get("media", []):
-        for track in medium.get("tracks", []):
-            title = track.get("title") or track.get("recording", {}).get("title")
-            if title:
-                titles.append(clean_inline_markdown(str(title)))
-    return [(f"{index}.", title) for index, title in enumerate(titles, start=1)]
-
-
-def fetch_release_tracks(
-    release_group_mbid: str,
-    preferred_release_mbid: str | None = None,
-) -> list[tuple[str, str]]:
-    if preferred_release_mbid:
-        url = (
-            f"{MUSICBRAINZ_API}/release/{preferred_release_mbid}?"
-            + urllib.parse.urlencode({"inc": "recordings", "fmt": "json"})
-        )
-        release = request_json(url, musicbrainz=True)
-        tracks = tracks_from_release(release)
-        if tracks:
-            return tracks
-
-    url = f"{MUSICBRAINZ_API}/release/?" + urllib.parse.urlencode(
-        {
-            "release-group": release_group_mbid,
-            "inc": "recordings",
-            "fmt": "json",
-            "limit": 25,
-        }
-    )
-    data = request_json(url, musicbrainz=True)
-    releases = [release for release in data.get("releases", []) if tracks_from_release(release)]
-    if not releases:
-        raise ValueError("MusicBrainz has no tracklist for the selected album.")
-
-    def release_rank(release: dict) -> tuple[int, int, str]:
-        official_penalty = 0 if release.get("status") == "Official" else 1
-        media_penalty = 0 if len(release.get("media", [])) == 1 else 1
-        return official_penalty, media_penalty, release.get("date", "9999")
-
-    return tracks_from_release(min(releases, key=release_rank))
-
-
 def preferred_image_url(image: dict) -> str | None:
     thumbnails = image.get("thumbnails", {})
     return (
@@ -486,7 +442,7 @@ def download_image_data_uri(url: str) -> tuple[str, tuple[int, int] | None]:
 
 def fetch_cover_art(
     release_group_mbid: str,
-) -> tuple[str, str, str | None, bool, str | None]:
+) -> tuple[str, str, str | None, bool]:
     metadata_url = f"{COVER_ART_API}/release-group/{release_group_mbid}"
     data = request_json(metadata_url)
     images = [image for image in data.get("images", []) if image.get("approved", True)]
@@ -520,9 +476,7 @@ def fetch_cover_art(
         if dimensions and dimensions[0] / max(dimensions[1], 1) >= 3:
             spine_data = candidate_spine
             dedicated_spine = True
-    release_url = str(data.get("release", ""))
-    release_mbid = release_url.rstrip("/").rsplit("/", 1)[-1] if release_url else None
-    return front_data, spine_data, front_url, dedicated_spine, release_mbid
+    return front_data, spine_data, front_url, dedicated_spine
 
 
 def cell_origin(position: int) -> tuple[float, float]:
@@ -618,19 +572,19 @@ def create_print_svg(
     face_y = group_y
     edge_x = group_x
     edge_y = group_y + 55
-    font_mm, line_height, lines = layout_tracklist(tracks)
-    text_height = len(lines) * line_height
-    first_baseline = face_y + (FACE_HEIGHT_MM - text_height) / 2 + font_mm
-
     track_elements = []
-    text_colour = "#ffffff" if front_image else "#111111"
-    for index, line in enumerate(lines):
-        y = first_baseline + index * line_height
-        track_elements.append(
-            f'    <text x="{face_x + 2:.2f}" y="{y:.2f}" '
-            f'font-family="Helvetica, Arial, sans-serif" font-size="{font_mm:.2f}" '
-            f'fill="{text_colour}" xml:space="preserve">{html.escape(line)}</text>'
-        )
+    if tracks:
+        font_mm, line_height, lines = layout_tracklist(tracks)
+        text_height = len(lines) * line_height
+        first_baseline = face_y + (FACE_HEIGHT_MM - text_height) / 2 + font_mm
+        text_colour = "#ffffff" if front_image else "#111111"
+        for index, line in enumerate(lines):
+            y = first_baseline + index * line_height
+            track_elements.append(
+                f'    <text x="{face_x + 2:.2f}" y="{y:.2f}" '
+                f'font-family="Helvetica, Arial, sans-serif" font-size="{font_mm:.2f}" '
+                f'fill="{text_colour}" xml:space="preserve">{html.escape(line)}</text>'
+            )
 
     title_font_mm = 2.2
     title_width = approximate_em_width(album_title) * title_font_mm
@@ -640,12 +594,13 @@ def create_print_svg(
 
     face_background = []
     if front_image:
-        face_background.extend(
-            [
-                f'    <image x="{face_x}" y="{face_y}" width="36" height="53" preserveAspectRatio="xMidYMid slice" href="{front_image}" />',
-                f'    <rect x="{face_x}" y="{face_y}" width="36" height="53" fill="#000000" fill-opacity="0.64" />',
-            ]
+        face_background.append(
+            f'    <image x="{face_x}" y="{face_y}" width="36" height="53" preserveAspectRatio="xMidYMid slice" href="{front_image}" />'
         )
+        if tracks:
+            face_background.append(
+                f'    <rect x="{face_x}" y="{face_y}" width="36" height="53" fill="#000000" fill-opacity="0.64" />'
+            )
 
     edge_background = []
     if spine_image:
@@ -755,36 +710,21 @@ def main() -> None:
 
             release_group_mbid = selected["id"]
             album_title = selected["title"]
-            preferred_release_mbid: str | None = None
-
-            if not args.no_online_art:
-                try:
-                    (
-                        front_image,
-                        spine_image,
-                        art_source,
-                        dedicated_spine,
-                        preferred_release_mbid,
-                    ) = fetch_cover_art(release_group_mbid)
-                    spine_note = (
-                        "dedicated spine scan"
-                        if dedicated_spine
-                        else "front-cover strip"
-                    )
-                    print(f"Artwork: {spine_note}", file=sys.stderr)
-                except (ValueError, urllib.error.URLError, TimeoutError) as error:
-                    print(
-                        f"Warning: cover art could not be loaded ({error}). "
-                        "Continuing with a text-only label.",
-                        file=sys.stderr,
-                    )
-
-            tracks = fetch_release_tracks(
-                release_group_mbid,
-                preferred_release_mbid=preferred_release_mbid,
+            if args.no_online_art:
+                raise ValueError("MusicBrainz mode requires online cover artwork.")
+            (
+                front_image,
+                spine_image,
+                art_source,
+                dedicated_spine,
+            ) = fetch_cover_art(release_group_mbid)
+            spine_note = (
+                "dedicated spine scan" if dedicated_spine else "front-cover strip"
             )
+            print(f"Artwork: {spine_note}", file=sys.stderr)
+            tracks = []
             print(
-                f"Workflow: MusicBrainz - {album_title} - {selected['artist']}",
+                f"Workflow: MusicBrainz artwork - {album_title} - {selected['artist']}",
                 file=sys.stderr,
             )
         except (ValueError, urllib.error.URLError, TimeoutError) as error:

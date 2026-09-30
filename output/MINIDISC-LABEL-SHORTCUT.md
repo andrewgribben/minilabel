@@ -5,7 +5,7 @@ A4 SVG cut file:
 
 1. **Manual** - provide a disc title and Markdown tracklist.
 2. **MusicBrainz** - search for an album, choose the match, and retrieve its
-   title, tracklist and artwork automatically.
+   title and artwork automatically.
 
 Both workflows use the same 12-position reusable-sheet grid. Positions run
 left-to-right and then top-to-bottom:
@@ -67,10 +67,11 @@ MusicBrainz or download artwork.
 
 Enter either an album title or `Artist - Album title` in the Shortcut input,
 then choose **MusicBrainz - search and match an album**. Select the correct
-result from the match chooser. The title and tracklist come from MusicBrainz.
-The front cover comes from the Cover Art Archive. A suitable wide image tagged
-as **Spine** is used when available; otherwise the edge label uses a matching
-horizontal strip derived from the front cover.
+result from the match chooser. The title comes from MusicBrainz. The front
+cover becomes the complete face label without a tracklist overlay.
+A suitable wide image tagged as **Spine** is used for the edge background when
+available; otherwise the edge label uses a matching horizontal strip derived
+from the front cover. The MusicBrainz album title is printed over that strip.
 
 ## Command-line use
 
@@ -89,8 +90,7 @@ MusicBrainz mode:
 ```
 
 Use `--artist "Artist name"` with an album title to narrow the search, or
-`--release-group MBID` to use an exact MusicBrainz release group. Add
-`--no-online-art` to retrieve MusicBrainz metadata without downloading artwork.
+`--release-group MBID` to use an exact MusicBrainz release group.
 
 Print the PDF at **100% / Actual Size**. Import the matching SVG into the cutter
 without resizing and keep the A4 page origin unchanged.
