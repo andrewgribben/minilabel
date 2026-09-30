@@ -28,25 +28,34 @@ brew install librsvg
 
 ## Create the macOS Shortcut
 
-1. Add an **Ask for Input** action with the prompt: `Paste Markdown, or enter Artist - Album`.
-2. Choose **Text** and enable multiple lines.
-3. Add a **Run Shell Script** action.
-4. Set **Pass Input** to **to stdin**.
-5. Use this command, updating the path if the script is moved:
+1. Add a **Choose from Menu** action with the prompt `Label source`.
+2. Add two menu items: **Manual tracklist** and **MusicBrainz artwork**.
+3. Under **Manual tracklist**:
+   - Add **Ask for Input**, select **Text**, enable multiple lines, and use the
+     prompt `Paste the Markdown disc title and tracklist`.
+   - Add **Run Shell Script**, set **Pass Input** to **to stdin**, and use:
 
-```sh
-/usr/bin/env python3 "/Volumes/External/Development/mdlabeller/output/minidisc_label_maker.py"
-```
+   ```sh
+   /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/output/minidisc_label_maker.py" --mode manual
+   ```
 
-The script asks which workflow to use and then asks for the reusable-sheet grid
-position. In MusicBrainz mode it also displays a match chooser. Generated PDFs
-and cut SVGs are saved in `/Volumes/External/Development/mdlabeller/output/`,
-and their full paths are returned to the Shortcut.
+4. Under **MusicBrainz artwork**:
+   - Add **Ask for Input**, select **Text**, and use the prompt
+     `Enter an album title, or Artist - Album title`.
+   - Add **Run Shell Script**, set **Pass Input** to **to stdin**, and use:
+
+   ```sh
+   /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/output/minidisc_label_maker.py" --mode musicbrainz
+   ```
+
+Each branch asks for the reusable-sheet grid position. The MusicBrainz branch
+also displays a match chooser. Generated PDFs and cut SVGs are saved in
+`/Volumes/External/Development/mdlabeller/output/`, and their full paths are
+returned to the Shortcut. There is no initial shared or empty input prompt.
 
 ## Manual workflow
 
-Choose **Manual - enter disc title and tracklist**. The Shortcut input must use
-this Markdown format:
+The **Manual tracklist** input must use this Markdown format:
 
 ```markdown
 # Album title
@@ -65,10 +74,9 @@ MusicBrainz or download artwork.
 
 ## MusicBrainz workflow
 
-Enter either an album title or `Artist - Album title` in the Shortcut input,
-then choose **MusicBrainz - search and match an album**. Select the correct
-result from the match chooser. The title comes from MusicBrainz. The front
-cover becomes the complete face label without a tracklist overlay.
+Enter either an album title or `Artist - Album title`, then select the correct
+result from the match chooser. The title comes from MusicBrainz. The front cover
+becomes the complete face label without a tracklist overlay.
 A suitable wide image tagged as **Spine** is used for the edge background when
 available; otherwise the edge label uses a matching horizontal strip derived
 from the front cover. The MusicBrainz album title is printed over that strip.
