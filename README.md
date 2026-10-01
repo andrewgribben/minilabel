@@ -10,6 +10,8 @@ The generator supports two workflows:
   Art Archive image as the face label. Multi-disc editions automatically fill
   consecutive positions with numbered face and edge labels. Exact MusicBrainz
   release and release-group URLs can also be pasted into the search input.
+  Newly submitted cover images are usable while MusicBrainz community approval
+  is still pending.
 
 Run the generator from the project root:
 

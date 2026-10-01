@@ -678,6 +678,20 @@ def preferred_image_url(image: dict) -> str | None:
     )
 
 
+def image_has_type(image: dict, image_type: str) -> bool:
+    return bool(image.get(image_type)) or image_type in {
+        str(value).casefold() for value in image.get("types", [])
+    }
+
+
+def preferred_cover_image(images: list[dict], image_type: str) -> dict | None:
+    matching = [image for image in images if image_has_type(image, image_type)]
+    return next(
+        (image for image in matching if image.get("approved", True)),
+        matching[0] if matching else None,
+    )
+
+
 def image_dimensions(image_bytes: bytes) -> tuple[int, int] | None:
     if image_bytes.startswith(b"\x89PNG") and len(image_bytes) >= 24:
         return (
@@ -741,26 +755,25 @@ def fetch_cover_art(
             if error.code == 404:
                 continue
             raise
-        if any(image.get("front") for image in candidate.get("images", [])):
+        if any(
+            image_has_type(image, "front")
+            for image in candidate.get("images", [])
+        ):
             data = candidate
             break
     if data is None:
         raise ValueError("The selected MusicBrainz release has no front cover image.")
-    images = [image for image in data.get("images", []) if image.get("approved", True)]
-    front = next(
-        (image for image in images if image.get("front")),
-        next(
-            (image for image in images if "front" in [str(t).lower() for t in image.get("types", [])]),
-            None,
-        ),
-    )
+    images = data.get("images", [])
+    front = preferred_cover_image(images, "front")
     if not front:
         raise ValueError("The selected MusicBrainz release has no front cover image.")
+    if not front.get("approved", True):
+        print(
+            "Cover Art Archive: using the front image while community approval is pending.",
+            file=sys.stderr,
+        )
 
-    spine = next(
-        (image for image in images if "spine" in [str(t).lower() for t in image.get("types", [])]),
-        None,
-    )
+    spine = preferred_cover_image(images, "spine")
     front_url = preferred_image_url(front)
     spine_url = preferred_image_url(spine) if spine else None
     if not front_url:

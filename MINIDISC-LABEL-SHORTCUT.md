@@ -127,6 +127,8 @@ available; otherwise the edge label uses a matching horizontal strip derived
 from the front cover. Multi-disc editions create one face and edge pair per
 medium. Each face receives a small disc badge, and each edge includes its medium
 title when MusicBrainz provides one, otherwise `Disc 1`, `Disc 2`, and so on.
+Newly submitted Cover Art Archive images can be used while their community
+approval is still pending; the script reports this in its run output.
 
 ## Command-line use
 

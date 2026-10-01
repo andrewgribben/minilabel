@@ -33,6 +33,31 @@ class MultiDiscLabelTests(unittest.TestCase):
             "csv",
         )
 
+    def test_fetch_cover_art_accepts_front_image_pending_approval(self):
+        pending_front = {
+            "approved": False,
+            "front": True,
+            "types": ["Front"],
+            "image": "https://example.test/front.jpg",
+            "thumbnails": {},
+        }
+        with (
+            patch.object(labels, "request_json", return_value={"images": [pending_front]}),
+            patch.object(
+                labels,
+                "download_image_data_uri",
+                return_value=("data:image/jpeg;base64,example", (500, 500)),
+            ),
+        ):
+            front, spine, source, dedicated_spine = labels.fetch_cover_art(
+                "release-id", "release-group-id"
+            )
+
+        self.assertEqual(front, "data:image/jpeg;base64,example")
+        self.assertEqual(spine, front)
+        self.assertEqual(source, "https://example.test/front.jpg")
+        self.assertFalse(dedicated_spine)
+
     def test_musicbrainz_markdown_link_selects_exact_release(self):
         reference = labels.musicbrainz_reference(
             "[Back to the Future - The Musical]"
