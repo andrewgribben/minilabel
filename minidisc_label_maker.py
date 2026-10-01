@@ -397,6 +397,50 @@ def split_album_search(search_text: str, artist_override: str | None) -> tuple[s
     return search_text, None
 
 
+def musicbrainz_reference(value: str) -> tuple[str, str] | None:
+    match = re.search(
+        r"musicbrainz\.org/(release-group|release)/"
+        r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+        r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})",
+        value,
+    )
+    if not match:
+        return None
+    return match.group(1), match.group(2).lower()
+
+
+def comparable_album_title(value: str) -> str:
+    value = normalise_label_text(clean_inline_markdown(value))
+    value = value.strip().strip('"').strip("'")
+    return re.sub(r"\s+", " ", value).casefold()
+
+
+def search_release_groups_from_text(
+    search_text: str, artist_override: str | None
+) -> list[dict]:
+    cleaned_search = clean_inline_markdown(search_text).strip().strip('"').strip("'")
+    if artist_override:
+        return search_release_groups(cleaned_search, artist_override.strip())
+
+    # A hyphen can be part of an album title as well as the supported
+    # "Artist - Album" shorthand. Prefer an exact full-title match before
+    # interpreting it as a separator.
+    full_title_candidates = search_release_groups(cleaned_search, None)
+    expected_title = comparable_album_title(cleaned_search)
+    exact_matches = [
+        candidate
+        for candidate in full_title_candidates
+        if comparable_album_title(candidate["title"]) == expected_title
+    ]
+    if exact_matches:
+        return exact_matches
+
+    album_title, artist = split_album_search(cleaned_search, None)
+    if artist:
+        return search_release_groups(album_title, artist)
+    return full_title_candidates
+
+
 def choose_release_group(candidates: list[dict]) -> dict:
     if not candidates:
         raise ValueError("MusicBrainz returned no matching releases.")
@@ -1005,11 +1049,20 @@ def main() -> None:
                     selected_group = lookup_release_group(args.release_group)
                 else:
                     search_text = args.search or input_text or prompt_search_text()
-                    album_query, artist_query = split_album_search(search_text, args.artist)
-                    candidates = search_release_groups(album_query, artist_query)
-                    selected_group = choose_release_group(candidates)
-                releases = browse_releases(selected_group["id"])
-                selected_release = choose_release(releases)
+                    reference = musicbrainz_reference(search_text)
+                    if reference and reference[0] == "release":
+                        selected_release = lookup_release(reference[1])
+                    else:
+                        if reference:
+                            selected_group = lookup_release_group(reference[1])
+                        else:
+                            candidates = search_release_groups_from_text(
+                                search_text, args.artist
+                            )
+                            selected_group = choose_release_group(candidates)
+                if selected_group:
+                    releases = browse_releases(selected_group["id"])
+                    selected_release = choose_release(releases)
 
             release_group_mbid = (
                 selected_release["release_group_id"]

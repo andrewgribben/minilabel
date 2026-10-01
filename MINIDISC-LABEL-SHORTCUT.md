@@ -48,7 +48,7 @@ xcode-select --install
 
 4. Under **MusicBrainz artwork**:
    - Add **Ask for Input**, select **Text**, and use the prompt
-     `Enter an album title, or Artist - Album title`.
+     `Enter an album title, Artist - Album title, or MusicBrainz URL`.
    - Add **Run Shell Script**, set **Pass Input** to **to stdin**, and use:
 
    ```sh
@@ -90,10 +90,11 @@ MusicBrainz or download artwork.
 
 ## MusicBrainz workflow
 
-Enter either an album title or `Artist - Album title`, select the correct album,
-then select the relevant release edition and disc count. The title and media
-information come from MusicBrainz. The front cover becomes the complete face
-label without a tracklist overlay.
+Enter an album title, `Artist - Album title`, or paste a MusicBrainz release or
+release-group URL. A release URL selects that exact edition immediately. For a
+title search, select the correct album and then the relevant release edition and
+disc count. The title and media information come from MusicBrainz. The front
+cover becomes the complete face label without a tracklist overlay.
 A suitable wide image tagged as **Spine** is used for the edge background when
 available; otherwise the edge label uses a matching horizontal strip derived
 from the front cover. Multi-disc editions create one face and edge pair per

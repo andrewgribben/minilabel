@@ -3,11 +3,37 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import minidisc_label_maker as labels
 
 
 class MultiDiscLabelTests(unittest.TestCase):
+    def test_musicbrainz_markdown_link_selects_exact_release(self):
+        reference = labels.musicbrainz_reference(
+            "[Back to the Future - The Musical]"
+            "(https://musicbrainz.org/release/"
+            "b65a4257-0f80-4824-970a-5b23e69b3b9f)"
+        )
+        self.assertEqual(
+            reference,
+            ("release", "b65a4257-0f80-4824-970a-5b23e69b3b9f"),
+        )
+
+    def test_exact_hyphenated_album_title_is_not_split_as_artist_and_album(self):
+        candidate = {
+            "id": "release-group-id",
+            "title": "Back to the Future - The Musical",
+        }
+        with patch.object(
+            labels, "search_release_groups", return_value=[candidate]
+        ) as search:
+            result = labels.search_release_groups_from_text(
+                "Back to the Future - The Musical", None
+            )
+        self.assertEqual(result, [candidate])
+        search.assert_called_once_with("Back to the Future - The Musical", None)
+
     def test_release_summary_orders_media(self):
         release = labels.release_summary(
             {

@@ -8,7 +8,8 @@ The generator supports two workflows:
 - **Manual:** provide a Markdown H1 disc title and ordered or unordered tracklist.
 - **MusicBrainz:** search for an album and release edition, then use its Cover
   Art Archive image as the face label. Multi-disc editions automatically fill
-  consecutive positions with numbered face and edge labels.
+  consecutive positions with numbered face and edge labels. Exact MusicBrainz
+  release and release-group URLs can also be pasted into the search input.
 
 Run the generator from the project root:
 
