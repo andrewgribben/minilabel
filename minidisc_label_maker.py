@@ -112,6 +112,15 @@ def parse_args() -> argparse.Namespace:
         help="Use an exact MusicBrainz release MBID and skip both match choosers.",
     )
     parser.add_argument(
+        "--disc-mode",
+        choices=("ask", "single", "multi"),
+        default="ask",
+        help=(
+            "For releases with multiple media, ask whether to create one label or "
+            "one per disc (default), or preselect single/multi."
+        ),
+    )
+    parser.add_argument(
         "--no-online-art",
         action="store_true",
         help="Legacy shortcut for manual mode when --mode is omitted.",
@@ -356,6 +365,48 @@ def parse_manual_input(
     if input_format == "csv":
         return parse_csv_tracklist(input_text)
     return parse_markdown(input_text)
+
+
+def choose_disc_mode(disc_count: int) -> str:
+    if disc_count <= 1:
+        return "single"
+
+    if sys.platform == "darwin" and shutil.which("osascript"):
+        apple_script = (
+            f'display dialog "MusicBrainz detected {disc_count} discs." buttons '
+            '{"Cancel", "Single label", "Multi-disc set"} '
+            'default button "Multi-disc set" with title "MiniDisc label layout"\n'
+            "return button returned of result"
+        )
+        result = subprocess.run(
+            ["osascript", "-e", apple_script],
+            check=False,
+            text=True,
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            raise SystemExit("No disc layout selected.")
+        return "multi" if result.stdout.strip() == "Multi-disc set" else "single"
+
+    with open("/dev/tty", "r+", encoding="utf-8") as terminal:
+        terminal.write(
+            f"MusicBrainz detected {disc_count} discs. "
+            "Create (1) a single label or (2) one label per disc? "
+        )
+        terminal.flush()
+        value = terminal.readline().strip()
+    if value not in {"1", "2"}:
+        raise SystemExit("Disc layout must be 1 or 2.")
+    return "single" if value == "1" else "multi"
+
+
+def disc_labels_for_media(media: list[dict], disc_mode: str) -> list[str]:
+    if disc_mode != "multi" or len(media) <= 1:
+        return [""]
+    return [
+        normalise_label_text(str(medium.get("title", "")).strip()) or f"Disc {index}"
+        for index, medium in enumerate(media, start=1)
+    ]
 
 
 def choose_position(label_count: int = 1) -> int:
@@ -1216,12 +1267,12 @@ def main() -> None:
             )
             album_title = normalise_label_text(selected_release["title"])
             media = selected_release["media"]
-            if len(media) > 1:
-                disc_labels = [
-                    normalise_label_text(str(medium.get("title", "")).strip())
-                    or f"Disc {index}"
-                    for index, medium in enumerate(media, start=1)
-                ]
+            disc_mode = (
+                choose_disc_mode(len(media))
+                if args.disc_mode == "ask"
+                else args.disc_mode
+            )
+            disc_labels = disc_labels_for_media(media, disc_mode)
             if args.no_online_art:
                 raise ValueError("MusicBrainz mode requires online cover artwork.")
             (
@@ -1240,7 +1291,8 @@ def main() -> None:
             )
             print(
                 f"Workflow: MusicBrainz artwork - {album_title} - {artist} "
-                f"({len(media)} disc{'s' if len(media) != 1 else ''})",
+                f"({len(media)} disc{'s' if len(media) != 1 else ''} detected; "
+                f"{len(disc_labels)} label{'s' if len(disc_labels) != 1 else ''})",
                 file=sys.stderr,
             )
         except (ValueError, urllib.error.URLError, TimeoutError) as error:

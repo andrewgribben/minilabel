@@ -96,6 +96,17 @@ class MultiDiscLabelTests(unittest.TestCase):
         )
         self.assertEqual([medium["title"] for medium in release["media"]], ["Act I", "Act II"])
 
+    def test_single_disc_mode_creates_one_unnumbered_label(self):
+        media = [{"title": "Act I"}, {"title": "Act II"}]
+        self.assertEqual(labels.disc_labels_for_media(media, "single"), [""])
+
+    def test_multi_disc_mode_creates_one_label_per_medium(self):
+        media = [{"title": "Act I"}, {"title": ""}]
+        self.assertEqual(
+            labels.disc_labels_for_media(media, "multi"),
+            ["Act I", "Disc 2"],
+        )
+
     def test_print_svg_contains_two_positioned_labels(self):
         svg = labels.create_print_svg(
             "Example Album", [], 2, disc_labels=["Act I", "Act II"]

@@ -11,7 +11,8 @@ The generator supports two workflows:
   consecutive positions with numbered face and edge labels. Exact MusicBrainz
   release and release-group URLs can also be pasted into the search input.
   Newly submitted cover images are usable while MusicBrainz community approval
-  is still pending.
+  is still pending. When multiple media are detected, choose either one label
+  for the whole release or one numbered label per disc.
 
 Run the generator from the project root:
 

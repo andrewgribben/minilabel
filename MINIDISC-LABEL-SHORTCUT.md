@@ -122,6 +122,8 @@ release-group URL. A release URL selects that exact edition immediately. For a
 title search, select the correct album and then the relevant release edition and
 disc count. The title and media information come from MusicBrainz. The front
 cover becomes the complete face label without a tracklist overlay.
+When MusicBrainz detects multiple media, the script asks whether to create a
+single unnumbered label for the whole release or one numbered label per disc.
 A suitable wide image tagged as **Spine** is used for the edge background when
 available; otherwise the edge label uses a matching horizontal strip derived
 from the front cover. Multi-disc editions create one face and edge pair per
@@ -152,6 +154,10 @@ MusicBrainz mode:
 /usr/bin/env python3 minidisc_label_maker.py \
   --mode musicbrainz --position 5 --search "Radiohead - OK Computer"
 ```
+
+For automation, add `--disc-mode single` or `--disc-mode multi` to skip the
+multi-disc choice. Without that option, the choice appears only when multiple
+media are detected.
 
 Use `--artist "Artist name"` with an album title to narrow the search, or
 `--release-group MBID` to use an exact MusicBrainz release group. Use
