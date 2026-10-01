@@ -9,6 +9,30 @@ import minidisc_label_maker as labels
 
 
 class MultiDiscLabelTests(unittest.TestCase):
+    def test_csv_tracklist_parses_title_artist_numbers_and_quoted_comma(self):
+        title, artist, tracks = labels.parse_csv_tracklist(
+            "disc_title,artist,track_number,track_title\n"
+            'Example Album,Example Artist,1,"Opening, Part One"\n'
+            ",,2,Finale\n"
+        )
+        self.assertEqual(title, "Example Album")
+        self.assertEqual(artist, "Example Artist")
+        self.assertEqual(tracks, [("1.", "Opening, Part One"), ("2.", "Finale")])
+
+    def test_csv_tracklist_generates_numbers_when_omitted(self):
+        title, artist, tracks = labels.parse_csv_tracklist(
+            "album,track\nNight Drive,City Lights\n,Last Train Home\n"
+        )
+        self.assertEqual(title, "Night Drive")
+        self.assertIsNone(artist)
+        self.assertEqual(tracks, [("1.", "City Lights"), ("2.", "Last Train Home")])
+
+    def test_manual_input_detects_csv_filename(self):
+        self.assertEqual(
+            labels.manual_input_format("not inspected", Path("tracks.csv"), "auto"),
+            "csv",
+        )
+
     def test_musicbrainz_markdown_link_selects_exact_release(self):
         reference = labels.musicbrainz_reference(
             "[Back to the Future - The Musical]"

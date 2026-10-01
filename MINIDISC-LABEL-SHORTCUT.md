@@ -1,10 +1,11 @@
 # MiniDisc label Shortcut
 
-The script has two workflows and creates one printable A4 PDF plus one matching
-A4 SVG cut file:
+The script has two label workflows, with separate Markdown and CSV routes in
+the Shortcut. It creates one printable A4 PDF plus one matching A4 SVG cut file:
 
-1. **Manual** - provide a disc title and Markdown tracklist.
-2. **MusicBrainz** - search for an album, choose the album and release edition,
+1. **Markdown tracklist** - paste a disc title and tracklist.
+2. **CSV tracklist** - select a CSV containing a disc title and tracks.
+3. **MusicBrainz** - search for an album, choose the album and release edition,
    and retrieve its title, artwork, and disc count automatically.
 
 Both workflows use the same 12-position reusable-sheet grid. Positions run
@@ -36,8 +37,9 @@ xcode-select --install
 ## Create the macOS Shortcut
 
 1. Add a **Choose from Menu** action with the prompt `Label source`.
-2. Add two menu items: **Manual tracklist** and **MusicBrainz artwork**.
-3. Under **Manual tracklist**:
+2. Add three menu items: **Markdown tracklist**, **CSV tracklist**, and
+   **MusicBrainz artwork**.
+3. Under **Markdown tracklist**:
    - Add **Ask for Input**, select **Text**, enable multiple lines, and use the
      prompt `Paste the Markdown disc title and tracklist`.
    - Add **Run Shell Script**, set **Pass Input** to **to stdin**, and use:
@@ -46,7 +48,15 @@ xcode-select --install
    /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/minidisc_label_maker.py" --mode manual
    ```
 
-4. Under **MusicBrainz artwork**:
+4. Under **CSV tracklist**:
+   - Add **Select File** and leave **Select Multiple** turned off.
+   - Add **Run Shell Script**, set **Pass Input** to **as arguments**, and use:
+
+   ```sh
+   /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/minidisc_label_maker.py" --mode manual --input "$1"
+   ```
+
+5. Under **MusicBrainz artwork**:
    - Add **Ask for Input**, select **Text**, and use the prompt
      `Enter an album title, Artist - Album title, or MusicBrainz URL`.
    - Add **Run Shell Script**, set **Pass Input** to **to stdin**, and use:
@@ -55,7 +65,7 @@ xcode-select --install
    /usr/bin/env python3 "/Volumes/External/Development/mdlabeller/minidisc_label_maker.py" --mode musicbrainz
    ```
 
-Each branch asks for the reusable-sheet grid position. The MusicBrainz branch
+Each route asks for the reusable-sheet grid position. The MusicBrainz route
 also displays album and release-edition choosers. For multi-disc releases, pick
 the first unused position; the remaining labels use the following positions in
 left-to-right, top-to-bottom order. Generated PDFs and cut SVGs are saved in
@@ -69,9 +79,9 @@ PDFs claim the same position, the newest one replaces the older one in the
 aggregate. Removing both files for an unwanted label removes it the next time
 the generator runs.
 
-## Manual workflow
+## Markdown workflow
 
-The **Manual tracklist** input must use this Markdown format:
+The **Markdown tracklist** input must use this format:
 
 ```markdown
 # Album title
@@ -88,6 +98,23 @@ The `Artist:` line is optional and is not printed. Unordered lists using `-`,
 wrapped and scaled to fit the face label. This route does not contact
 MusicBrainz or download artwork.
 
+## CSV workflow
+
+The CSV must have a header row. Use `disc_title`, `track_number`, and
+`track_title`; `track_number` and `artist` are optional. The disc title may be
+repeated on every row or supplied only on the first row:
+
+```csv
+disc_title,artist,track_number,track_title
+Night Drive,Example Artist,1,City Lights
+,,2,Last Train Home
+```
+
+Common alternatives such as `album_title`, `track`, `song`, `number`, and
+`position` are also accepted. Quoted commas in titles work normally. The H1
+equivalent (`disc_title`) becomes the edge-label title, and the tracklist is
+wrapped and scaled to fit the face label. This route stays offline.
+
 ## MusicBrainz workflow
 
 Enter an album title, `Artist - Album title`, or paste a MusicBrainz release or
@@ -103,11 +130,18 @@ title when MusicBrainz provides one, otherwise `Disc 1`, `Disc 2`, and so on.
 
 ## Command-line use
 
-Manual mode:
+Manual Markdown mode:
 
 ```sh
 /usr/bin/env python3 minidisc_label_maker.py \
   --mode manual --position 5 --input work/album.md
+```
+
+Manual CSV mode:
+
+```sh
+/usr/bin/env python3 minidisc_label_maker.py \
+  --mode manual --position 5 --input work/example-album.csv
 ```
 
 MusicBrainz mode:

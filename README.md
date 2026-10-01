@@ -5,7 +5,7 @@ position on the reusable 12-position A4 layout.
 
 The generator supports two workflows:
 
-- **Manual:** provide a Markdown H1 disc title and ordered or unordered tracklist.
+- **Manual:** provide a Markdown or CSV disc title and tracklist.
 - **MusicBrainz:** search for an album and release edition, then use its Cover
   Art Archive image as the face label. Multi-disc editions automatically fill
   consecutive positions with numbered face and edge labels. Exact MusicBrainz
@@ -31,3 +31,20 @@ After every successful run, the generator also rebuilds:
 
 Both ready files include matching corner registration marks. If multiple label
 files occupy the same position, the most recently generated PDF is used.
+
+For CSV input, use the headers `disc_title`, `track_number`, and `track_title`.
+The disc title may appear only in the first data row, and `track_number` is
+optional. An optional `artist` column is accepted but is not printed:
+
+```csv
+disc_title,artist,track_number,track_title
+Night Drive,Example Artist,1,City Lights
+,,2,Last Train Home
+```
+
+The format is detected automatically from a `.csv` filename or its headers:
+
+```sh
+/usr/bin/env python3 minidisc_label_maker.py \
+  --mode manual --position 5 --input work/example-album.csv
+```

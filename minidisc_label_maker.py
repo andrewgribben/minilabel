@@ -6,8 +6,13 @@ Input Markdown:
     1. First track
     2. Second track
 
-There are two workflows: manual Markdown title and tracklist input, or a
-MusicBrainz search that supplies the album title, release media, and cover art.
+Input CSV:
+    disc_title,track_number,track_title
+    Album title,1,First track
+    ,2,Second track
+
+There are two workflows: manual Markdown or CSV title and tracklist input, or
+a MusicBrainz search that supplies the album title, release media, and cover art.
 The script writes an artwork PDF and a matching SVG cut file. Multi-disc
 releases use consecutive positions. If --position is not supplied, macOS
 displays a position chooser numbered left-to-right and then top-to-bottom.
@@ -17,7 +22,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import html
+import io
 import json
 import os
 import re
@@ -72,7 +79,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=Path,
-        help="Input file: Markdown in manual mode, or search text in MusicBrainz mode.",
+        help="Input file: Markdown or CSV in manual mode, or search text in MusicBrainz mode.",
+    )
+    parser.add_argument(
+        "--input-format",
+        choices=("auto", "markdown", "csv"),
+        default="auto",
+        help="Manual input format (default: detect from filename or content).",
     )
     parser.add_argument(
         "--output-dir",
@@ -108,7 +121,7 @@ def parse_args() -> argparse.Namespace:
 
 def read_optional_input(input_path: Path | None) -> str:
     if input_path:
-        return input_path.expanduser().read_text(encoding="utf-8").strip()
+        return input_path.expanduser().read_text(encoding="utf-8-sig").strip()
     if not sys.stdin.isatty():
         return sys.stdin.read().strip()
     return ""
@@ -226,6 +239,123 @@ def parse_markdown(markdown: str) -> tuple[str, str | None, list[tuple[str, str]
     if not tracks:
         raise SystemExit("The Markdown must contain at least one ordered or unordered list item.")
     return title, artist, tracks
+
+
+def csv_dialect(csv_text: str) -> csv.Dialect:
+    try:
+        return csv.Sniffer().sniff(csv_text[:4096], delimiters=",;\t")
+    except csv.Error:
+        return csv.excel
+
+
+def normalise_csv_header(value: str) -> str:
+    value = value.lstrip("\ufeff").strip().casefold()
+    return re.sub(r"[^a-z0-9]+", "_", value).strip("_")
+
+
+def csv_columns(fieldnames: list[str] | None) -> tuple[str, str, str | None, str | None]:
+    if not fieldnames:
+        raise ValueError("The CSV must have a header row.")
+    fields = {normalise_csv_header(name): name for name in fieldnames if name}
+
+    def first(names: tuple[str, ...]) -> str | None:
+        return next((fields[name] for name in names if name in fields), None)
+
+    disc_column = first(("disc_title", "album_title", "album", "disc"))
+    track_column = first(("track_title", "track", "song_title", "song", "name"))
+    title_column = fields.get("title")
+    if disc_column and not track_column and title_column:
+        track_column = title_column
+    elif track_column and not disc_column and title_column:
+        disc_column = title_column
+
+    if not disc_column:
+        raise ValueError(
+            "The CSV needs a disc_title column (album_title, album, or disc also work)."
+        )
+    if not track_column:
+        raise ValueError(
+            "The CSV needs a track_title column (track, song, title, or name also work)."
+        )
+    number_column = first(("track_number", "track_no", "number", "no", "position"))
+    artist_column = first(("artist", "album_artist", "disc_artist"))
+    return disc_column, track_column, number_column, artist_column
+
+
+def parse_csv_tracklist(csv_text: str) -> tuple[str, str | None, list[tuple[str, str]]]:
+    reader = csv.DictReader(
+        io.StringIO(csv_text.lstrip("\ufeff")),
+        dialect=csv_dialect(csv_text),
+        skipinitialspace=True,
+    )
+    try:
+        disc_column, track_column, number_column, artist_column = csv_columns(
+            reader.fieldnames
+        )
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
+
+    disc_title = ""
+    artist: str | None = None
+    tracks: list[tuple[str, str]] = []
+    for row_number, row in enumerate(reader, start=2):
+        row_title = clean_inline_markdown(str(row.get(disc_column) or ""))
+        if row_title:
+            if disc_title and comparable_album_title(row_title) != comparable_album_title(
+                disc_title
+            ):
+                raise SystemExit(
+                    f"CSV row {row_number} changes the disc title from "
+                    f'"{disc_title}" to "{row_title}".'
+                )
+            disc_title = row_title
+
+        if artist_column and not artist:
+            row_artist = clean_inline_markdown(str(row.get(artist_column) or ""))
+            artist = row_artist or None
+
+        track_title = clean_inline_markdown(str(row.get(track_column) or ""))
+        if not track_title:
+            continue
+        raw_number = str(row.get(number_column) or "").strip() if number_column else ""
+        if re.fullmatch(r"\d+\.0+", raw_number):
+            raw_number = raw_number.split(".", 1)[0]
+        if raw_number:
+            marker = raw_number if raw_number.endswith((".", ")")) else f"{raw_number}."
+        else:
+            marker = f"{len(tracks) + 1}."
+        tracks.append((marker, track_title))
+
+    if not disc_title:
+        raise SystemExit("The CSV must provide a disc title in at least one row.")
+    if not tracks:
+        raise SystemExit("The CSV must contain at least one track title.")
+    return disc_title, artist, tracks
+
+
+def manual_input_format(
+    input_text: str, input_path: Path | None, requested_format: str
+) -> str:
+    if requested_format != "auto":
+        return requested_format
+    if input_path and input_path.suffix.casefold() == ".csv":
+        return "csv"
+    try:
+        reader = csv.reader(io.StringIO(input_text), dialect=csv_dialect(input_text))
+        fieldnames = next(reader, None)
+        csv_columns(fieldnames)
+        return "csv"
+    except (ValueError, csv.Error):
+        return "markdown"
+
+
+def parse_manual_input(
+    input_text: str, input_path: Path | None, requested_format: str
+) -> tuple[str, str | None, list[tuple[str, str]]]:
+    input_format = manual_input_format(input_text, input_path, requested_format)
+    if input_format == "csv":
+        return parse_csv_tracklist(input_text)
+    return parse_markdown(input_text)
 
 
 def choose_position(label_count: int = 1) -> int:
@@ -1034,11 +1164,14 @@ def main() -> None:
     if mode == "manual":
         if not input_text:
             raise SystemExit(
-                "Manual mode requires Markdown on standard input or via --input FILE."
+                "Manual mode requires Markdown or CSV on standard input or via --input FILE."
             )
-        album_title, _, tracks = parse_markdown(input_text)
+        input_format = manual_input_format(input_text, args.input, args.input_format)
+        album_title, _, tracks = parse_manual_input(
+            input_text, args.input, args.input_format
+        )
         album_title = normalise_label_text(album_title)
-        print("Workflow: manual title and tracklist", file=sys.stderr)
+        print(f"Workflow: manual {input_format} title and tracklist", file=sys.stderr)
     else:
         try:
             selected_group = None
