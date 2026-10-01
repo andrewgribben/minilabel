@@ -21,3 +21,12 @@ directory by default. It contains generated labels only. Reusable A4 layout
 assets are kept in [`templates/`](templates/), and full macOS Shortcut and
 command-line instructions are in
 [`MINIDISC-LABEL-SHORTCUT.md`](MINIDISC-LABEL-SHORTCUT.md).
+
+After every successful run, the generator also rebuilds:
+
+- `output/ready-to-print.pdf`, containing every occupied position represented
+  by a PDF and matching cut SVG still in `output/`.
+- `output/ready-to-cut.svg`, containing cut paths for those positions only.
+
+Both ready files include matching corner registration marks. If multiple label
+files occupy the same position, the most recently generated PDF is used.

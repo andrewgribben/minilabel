@@ -29,6 +29,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -783,8 +784,24 @@ def create_print_svg(
     return "\n".join(parts)
 
 
-def create_cut_svg(album_title: str, position: int, label_count: int = 1) -> str:
-    positions = list(range(position, position + label_count))
+def registration_marks_svg() -> list[str]:
+    return [
+        '  <g id="registration-marks" fill="none" stroke="#000000" stroke-width="0.35" stroke-linecap="square">',
+        '    <path d="M 5 5 H 12 M 5 5 V 12" />',
+        '    <path d="M 205 5 H 198 M 205 5 V 12" />',
+        '    <path d="M 5 292 H 12 M 5 292 V 285" />',
+        '    <path d="M 205 292 H 198 M 205 292 V 285" />',
+        "  </g>",
+    ]
+
+
+def create_cut_svg_for_positions(
+    album_title: str,
+    positions: list[int],
+    *,
+    include_registration_marks: bool = False,
+) -> str:
+    positions = sorted(set(positions))
     parts = [
         svg_header(
             f"{album_title} - MiniDisc cut paths",
@@ -792,18 +809,27 @@ def create_cut_svg(album_title: str, position: int, label_count: int = 1) -> str
         ),
         '  <g id="cut-paths" fill="none" stroke="#ff0000" stroke-width="0.1" vector-effect="non-scaling-stroke">',
     ]
-    for index, grid_position in enumerate(positions, start=1):
+    for grid_position in positions:
         group_x, group_y = cell_origin(grid_position)
         face_x = group_x + 11.5
         edge_y = group_y + 55
         parts.extend(
             [
-                f'    <rect id="face-label-{index}" x="{face_x}" y="{group_y}" width="36" height="53" rx="1" ry="1" />',
-                f'    <rect id="edge-label-{index}" x="{group_x}" y="{edge_y}" width="59" height="4" rx="0.75" ry="0.75" />',
+                f'    <rect id="face-label-position-{grid_position}" x="{face_x}" y="{group_y}" width="36" height="53" rx="1" ry="1" />',
+                f'    <rect id="edge-label-position-{grid_position}" x="{group_x}" y="{edge_y}" width="59" height="4" rx="0.75" ry="0.75" />',
             ]
         )
-    parts.extend(["  </g>", "</svg>"])
+    parts.append("  </g>")
+    if include_registration_marks:
+        parts.extend(registration_marks_svg())
+    parts.append("</svg>")
     return "\n".join(parts)
+
+
+def create_cut_svg(album_title: str, position: int, label_count: int = 1) -> str:
+    return create_cut_svg_for_positions(
+        album_title, list(range(position, position + label_count))
+    )
 
 
 def find_rsvg_convert() -> str:
@@ -819,6 +845,129 @@ def find_rsvg_convert() -> str:
         "rsvg-convert is required to create the PDF. Install it once with: "
         "brew install librsvg"
     )
+
+
+def positions_from_cut_svg(cut_path: Path) -> list[int]:
+    try:
+        root = ET.parse(cut_path).getroot()
+    except (ET.ParseError, OSError) as error:
+        raise ValueError(f"Could not read cut file {cut_path.name}: {error}") from error
+
+    positions = []
+    for element in root.iter():
+        if not element.tag.endswith("rect"):
+            continue
+        element_id = element.attrib.get("id", "")
+        if not element_id.startswith("face-label"):
+            continue
+        try:
+            x = float(element.attrib["x"])
+            y = float(element.attrib["y"])
+        except (KeyError, ValueError):
+            continue
+        for position in range(1, 13):
+            cell_x, cell_y = cell_origin(position)
+            if abs(x - (cell_x + 11.5)) < 0.2 and abs(y - cell_y) < 0.2:
+                positions.append(position)
+                break
+    return sorted(set(positions))
+
+
+def collect_aggregate_sources(output_dir: Path) -> tuple[list[dict], list[int]]:
+    owners: dict[int, tuple[int, str, Path]] = {}
+    for pdf_path in sorted(output_dir.glob("*.pdf")):
+        if pdf_path.name == "ready-to-print.pdf":
+            continue
+        cut_path = pdf_path.with_name(f"{pdf_path.stem}-cut.svg")
+        if not cut_path.is_file():
+            print(
+                f"Aggregate: skipping {pdf_path.name} because its cut SVG is missing.",
+                file=sys.stderr,
+            )
+            continue
+        positions = positions_from_cut_svg(cut_path)
+        if not positions:
+            print(
+                f"Aggregate: skipping {pdf_path.name} because no grid positions were found.",
+                file=sys.stderr,
+            )
+            continue
+        version = (pdf_path.stat().st_mtime_ns, pdf_path.name, pdf_path)
+        for position in positions:
+            if position not in owners or version[:2] > owners[position][:2]:
+                owners[position] = version
+
+    positions_by_pdf: dict[Path, list[int]] = {}
+    for position, (_, _, pdf_path) in owners.items():
+        positions_by_pdf.setdefault(pdf_path, []).append(position)
+    sources = [
+        {"path": str(pdf_path), "positions": sorted(positions)}
+        for pdf_path, positions in positions_by_pdf.items()
+    ]
+    sources.sort(key=lambda source: min(source["positions"]))
+    return sources, sorted(owners)
+
+
+def create_ready_to_print(output_dir: Path, sources: list[dict]) -> Path:
+    helper_path = PROJECT_ROOT / "scripts" / "merge_label_pdfs.swift"
+    if not helper_path.is_file():
+        raise SystemExit(f"Aggregate PDF helper is missing: {helper_path}")
+    if not Path("/usr/bin/xcrun").is_file():
+        raise SystemExit(
+            "The macOS Xcode Command Line Tools are required to combine label PDFs. "
+            "Install them with: xcode-select --install"
+        )
+
+    ready_path = output_dir / "ready-to-print.pdf"
+    with tempfile.TemporaryDirectory(
+        prefix=".minidisc-ready-", dir=output_dir
+    ) as temporary_dir:
+        temporary_path = Path(temporary_dir)
+        pending_pdf = temporary_path / "ready-to-print.pdf"
+        plan_path = temporary_path / "aggregate-plan.json"
+        plan_path.write_text(
+            json.dumps({"output": str(pending_pdf), "sources": sources}),
+            encoding="utf-8",
+        )
+        environment = os.environ.copy()
+        environment["SWIFT_MODULECACHE_PATH"] = str(temporary_path / "swift-cache")
+        environment["CLANG_MODULE_CACHE_PATH"] = str(temporary_path / "clang-cache")
+        result = subprocess.run(
+            ["/usr/bin/xcrun", "swift", str(helper_path), str(plan_path)],
+            check=False,
+            text=True,
+            capture_output=True,
+            env=environment,
+        )
+        if result.returncode != 0 or not pending_pdf.is_file():
+            detail = result.stderr.strip() or "unknown PDF merge error"
+            raise SystemExit(f"Could not create ready-to-print.pdf: {detail}")
+        os.replace(pending_pdf, ready_path)
+    return ready_path
+
+
+def update_ready_outputs(output_dir: Path) -> tuple[Path, Path]:
+    sources, positions = collect_aggregate_sources(output_dir)
+    if not positions:
+        raise SystemExit("No positioned label PDFs were found for the aggregate sheet.")
+
+    ready_cut_path = output_dir / "ready-to-cut.svg"
+    pending_cut_path = output_dir / ".ready-to-cut.svg.tmp"
+    pending_cut_path.write_text(
+        create_cut_svg_for_positions(
+            "Ready to cut",
+            positions,
+            include_registration_marks=True,
+        ),
+        encoding="utf-8",
+    )
+    os.replace(pending_cut_path, ready_cut_path)
+    ready_print_path = create_ready_to_print(output_dir, sources)
+    print(
+        "Aggregate positions: " + ", ".join(str(position) for position in positions),
+        file=sys.stderr,
+    )
+    return ready_print_path, ready_cut_path
 
 
 def main() -> None:
@@ -944,8 +1093,11 @@ def main() -> None:
             check=True,
         )
 
+    ready_print_path, ready_cut_path = update_ready_outputs(output_dir)
     print(pdf_path)
     print(cut_path)
+    print(ready_print_path)
+    print(ready_cut_path)
 
 
 if __name__ == "__main__":

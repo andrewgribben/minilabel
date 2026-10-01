@@ -26,6 +26,13 @@ If it is missing on another Mac, install it with:
 brew install librsvg
 ```
 
+The combined ready-to-print sheet uses Apple's Swift PDF support. If macOS
+reports that the developer tools are missing, install them once with:
+
+```sh
+xcode-select --install
+```
+
 ## Create the macOS Shortcut
 
 1. Add a **Choose from Menu** action with the prompt `Label source`.
@@ -54,6 +61,13 @@ the first unused position; the remaining labels use the following positions in
 left-to-right, top-to-bottom order. Generated PDFs and cut SVGs are saved in
 `/Volumes/External/Development/mdlabeller/output/`, and their full paths are
 returned to the Shortcut. There is no initial shared or empty input prompt.
+
+Every run also rebuilds `ready-to-print.pdf` and `ready-to-cut.svg` from all
+label PDF/cut-SVG pairs still in `output/`. The ready files contain only the
+occupied grid positions and include matching corner registration marks. If two
+PDFs claim the same position, the newest one replaces the older one in the
+aggregate. Removing both files for an unwanted label removes it the next time
+the generator runs.
 
 ## Manual workflow
 
@@ -107,7 +121,10 @@ Use `--artist "Artist name"` with an album title to narrow the search, or
 `--release MBID` to select an exact release edition and skip both choosers.
 
 Print the PDF at **100% / Actual Size**. Import the matching SVG into the cutter
-without resizing and keep the A4 page origin unchanged.
+without resizing and keep the A4 page origin unchanged. Use
+`ready-to-print.pdf` with `ready-to-cut.svg` when printing the combined sheet.
+The SVG keeps registration marks in a separate `registration-marks` group from
+the red label paths so they can be treated separately by cutting software.
 
 Cover art is retrieved from the community-curated Cover Art Archive. Artwork
 rights remain with their respective owners; use downloaded images appropriately.
